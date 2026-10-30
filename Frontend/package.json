@@ -1,0 +1,39 @@
+{
+  "name": "cmp-portal",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Sutantra CMP — Tatv Cloud tenant portal and operator console prototypes (React, TypeScript, PatternFly) against mock CMP APIs",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "build:preview": "tsc -b && vite build --mode preview",
+    "build:preview:operator": "tsc -b && vite build --mode preview-operator",
+    "typecheck": "tsc -b",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@patternfly/patternfly": "6.2.3",
+    "@patternfly/react-core": "6.2.2",
+    "@patternfly/react-icons": "6.2.2",
+    "@patternfly/react-table": "6.2.2",
+    "i18next": "24.2.3",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-i18next": "15.4.1",
+    "react-router-dom": "^7.18.5"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "6.6.3",
+    "@testing-library/react": "16.3.0",
+    "@types/node": "^26.6.6",
+    "@types/react": "18.3.23",
+    "@types/react-dom": "18.3.7",
+    "@vitejs/plugin-react": "4.4.1",
+    "jsdom": "26.1.0",
+    "typescript": "5.8.3",
+    "vite": "^6.4.5",
+    "vite-plugin-singlefile": "2.2.0",
+    "vitest": "^5.0.5"
+  }
+}
