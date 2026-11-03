@@ -5,6 +5,7 @@ import {
   FormSelectOption,
   HelperText,
   HelperTextItem,
+  NumberInput,
   Switch,
   TextInput,
 } from '@patternfly/react-core';
@@ -71,6 +72,33 @@ export function SchemaFields({ schema, values, errors, onChange, only }: Props) 
                 value={String(values[key] ?? '')}
                 onChange={(v) => onChange(key, v)}
                 options={f.enum.map((v, i) => ({ value: v, title: f['x-enumLabels']?.[i] ?? v, hint: f['x-enumHints']?.[i], badge: f['x-enumBadges']?.[i] }))}
+              />
+              {helper}
+            </FormGroup>
+          );
+        }
+        if (f.type === 'integer' && f['x-widget'] === 'stepper') {
+          const n = Number(values[key] ?? f.default ?? 0) || 0;
+          const lo = f.minimum ?? 0;
+          const hi = f.maximum ?? Number.MAX_SAFE_INTEGER;
+          return (
+            <FormGroup key={key} label={f.title} isRequired={required} fieldId={fieldId}>
+              <NumberInput
+                id={fieldId}
+                value={n}
+                min={lo}
+                max={hi}
+                onMinus={() => onChange(key, Math.max(lo, n - 1))}
+                onPlus={() => onChange(key, Math.min(hi, n + 1))}
+                onChange={(e) => {
+                  const v = Number((e.target as HTMLInputElement).value);
+                  onChange(key, Number.isNaN(v) ? lo : Math.min(hi, Math.max(lo, Math.floor(v))));
+                }}
+                inputName={key}
+                inputAriaLabel={f.title}
+                minusBtnAriaLabel={`Fewer ${f.title.toLowerCase()}`}
+                plusBtnAriaLabel={`More ${f.title.toLowerCase()}`}
+                validated={error ? 'error' : 'default'}
               />
               {helper}
             </FormGroup>

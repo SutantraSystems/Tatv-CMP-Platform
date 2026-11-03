@@ -59,6 +59,7 @@ export const ACTION_LABELS: Record<Action, string> = {
   decommission: 'Decommission',
   restore: 'Restore',
   purge: 'Delete permanently',
+  'scale-replicas': 'Change read replicas',
 };
 
 /** States from which each lifecycle action is possible (the API enforces the same rules). */

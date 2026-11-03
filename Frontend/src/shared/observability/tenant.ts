@@ -14,6 +14,10 @@ export interface ChartDef {
 const busy = (id: string) => 20 + ((id.length * 37 + id.charCodeAt(id.length - 1)) % 45);
 
 export function resourceCharts(r: Pick<Resource, 'id' | 'catalogItemId' | 'spec'>, kind: ResourceKind, range: RangeId, end?: number): ChartDef[] {
+  return chartsFor(r, kind, range, end).filter((c) => c.series.length > 0);
+}
+
+function chartsFor(r: Pick<Resource, 'id' | 'catalogItemId' | 'spec'>, kind: ResourceKind, range: RangeId, end?: number): ChartDef[] {
   const ts = timeline(range, end);
   const b = busy(r.id);
   const s = (name: string, key: string, shape: Parameters<typeof metric>[2]): Series => ({ name, points: metric(`${r.id}-${key}`, ts, shape) });
@@ -49,7 +53,14 @@ export function resourceCharts(r: Pick<Resource, 'id' | 'catalogItemId' | 'spec'
           unit: ' ms',
           series: [s('p50', 'p50', { base: 4, daily: 2, noise: 1, min: 1 }), s('p95', 'p95', { base: 18, daily: 10, noise: 4, spikeChance: 0.03, spikeSize: 60, min: 3 })],
         },
-        { title: 'Replication lag', unit: ' ms', series: [s('Replica lag', 'lag', { base: 40, noise: 25, spikeChance: 0.03, spikeSize: 400 })] },
+        {
+          title: 'Replication lag',
+          unit: ' ms',
+          series: [
+            ...(r.spec.topology === 'ha' ? [s('Standbys (sync)', 'lag-sb', { base: 1, noise: 1, min: 0 })] : []),
+            ...Array.from({ length: Math.min(3, Number(r.spec.readReplicas ?? 0)) }, (_, k) => s(`Read replica ${k + 1}`, `lag-rr${k}`, { base: 18 + k * 6, noise: 10, spikeChance: 0.03, spikeSize: 250, min: 1 })),
+          ],
+        },
       ];
     case 'storage': {
       const id = r.catalogItemId;

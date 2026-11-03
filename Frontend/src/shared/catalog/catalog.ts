@@ -99,6 +99,17 @@ const k8sSchema = {
   },
 };
 
+/** Read replicas per database: up to READ_REPLICA_APPROVAL_ABOVE without approval, MAX_READ_REPLICAS at most. */
+export const READ_REPLICA_APPROVAL_ABOVE = 5;
+export const MAX_READ_REPLICAS = 8;
+
+/** Database instances by role: primary, synchronous standbys (failover) and asynchronous read replicas. */
+export function dbInstances(spec: Spec): { standbys: number; readReplicas: number; total: number } {
+  const standbys = spec.topology === 'ha' ? 2 : 0;
+  const readReplicas = Math.max(0, Math.floor(Number(spec.readReplicas ?? 0)) || 0);
+  return { standbys, readReplicas, total: 1 + standbys + readReplicas };
+}
+
 const pgSchema = {
   type: 'object' as const,
   required: ['name', 'version', 'size', 'topology', 'storageGb', 'backupDays'],
@@ -114,8 +125,12 @@ const pgSchema = {
       'x-widget': 'cards' as const, default: 'db.small', 'x-section': 'Size and availability',
     },
     topology: {
-      type: 'string' as const, title: 'Availability', enum: ['single', 'ha'], 'x-enumLabels': ['Single instance', 'High availability'],
-      'x-enumHints': ['For development and test', 'Primary and two replicas, automatic failover'], 'x-widget': 'cards' as const, default: 'ha', 'x-section': 'Size and availability',
+      type: 'string' as const, title: 'Availability', enum: ['single', 'ha'], 'x-enumLabels': ['Standalone', 'High availability'],
+      'x-enumHints': ['One instance, for development and test', 'Primary and two standbys, automatic failover; standbys also serve reads'], 'x-widget': 'cards' as const, default: 'ha', 'x-section': 'Size and availability',
+    },
+    readReplicas: {
+      type: 'integer' as const, title: 'Read replicas', minimum: 0, maximum: MAX_READ_REPLICAS, default: 0, 'x-widget': 'stepper' as const, 'x-section': 'Size and availability',
+      description: `Extra read-only copies for reports, dashboards and read-heavy traffic, reached through the read-only endpoint. They copy from the primary asynchronously, so reads can trail writes by a few milliseconds, and are never promoted in a failover. More than ${READ_REPLICA_APPROVAL_ABOVE} needs approval.`,
     },
     storageGb: { type: 'integer' as const, title: 'Storage per instance (GB)', minimum: 20, maximum: 4000, default: 100, 'x-section': 'Size and availability' },
     encrypted: { type: 'boolean' as const, title: 'Encrypt with a customer-managed key', default: false, 'x-section': 'Protection' },
@@ -219,7 +234,7 @@ export const CATALOG: CatalogItem[] = [
   {
     id: 'pg', name: 'Managed PostgreSQL', category: 'databases', group: 'SQL', kind: 'db', powerControl: true,
     description: 'Highly available PostgreSQL with point-in-time restore.', publisher: 'Platform', available: true,
-    schema: pgSchema, day2: ['reboot', 'failover', 'backup'], approvalRule: 'The db.large size needs approval from an organisation admin.',
+    schema: pgSchema, day2: ['reboot', 'failover', 'backup'], approvalRule: `The db.large size, or more than ${READ_REPLICA_APPROVAL_ABOVE} read replicas, needs approval from an organisation admin.`,
   },
   { id: 'nosql-doc', name: 'Document database', category: 'databases', group: 'NoSQL', description: 'Managed JSON document store with replicas and backups.', publisher: 'Platform', available: false, day2: [] },
   { id: 'nosql-kv', name: 'In-memory key-value store', category: 'databases', group: 'NoSQL', description: 'Managed cache for sessions, queues and leaderboards.', publisher: 'Platform', available: false, day2: [] },
@@ -275,7 +290,7 @@ export function demandFor(itemId: string, spec: Spec): Demand {
     }
     case 'db': {
       const d = DB_SIZES[String(spec.size)] ?? { vcpu: 0, ramGb: 0 };
-      const n = spec.topology === 'ha' ? 3 : 1;
+      const n = dbInstances(spec).total;
       return { vcpu: n * d.vcpu, ramGb: n * d.ramGb, volumeGb: n * Number(spec.storageGb ?? 0), gpus: 0, publicIps: 0 };
     }
     case 'storage':
@@ -294,7 +309,7 @@ export function needsApproval(itemId: string, spec: Spec): boolean {
     case 'k8s':
       return Number(spec.workerCount ?? 0) > 6 || spec.workerFlavour === 'g.gpu1';
     case 'db':
-      return spec.size === 'db.large';
+      return spec.size === 'db.large' || dbInstances(spec).readReplicas > READ_REPLICA_APPROVAL_ABOVE;
     case 'storage':
       return Number(spec.sizeGb ?? 0) > 4000;
     default:
@@ -314,7 +329,7 @@ export function describe(itemId: string, spec: Spec): string {
       return `${spec.workerCount} × ${String(spec.workerFlavour)}${f?.gpus ? ' (GPU)' : ''} · ${spec.controlPlane} control plane`;
     }
     case 'db':
-      return `${String(spec.size)} · ${spec.topology === 'ha' ? 'HA, 3 instances' : 'single instance'} · ${spec.storageGb} GB each`;
+      return `${String(spec.size)} · ${dbTopologyText(spec)} · ${spec.storageGb} GB each`;
     case 'storage':
       if (itemId === 'object') return `Versioning ${spec.versioning ? 'on' : 'off'}${spec.objectLock ? ` · Object Lock ${spec.retentionDays} days` : ''}`;
       if (itemId === 'file') return `${Number(spec.sizeGb).toLocaleString('en-IN')} GB · ${spec.protocol === 'smb' ? 'SMB 3' : 'NFS v4.1'}`;
@@ -375,7 +390,7 @@ export function monthlyPrice(itemId: string, spec: Spec, computeOff = false): nu
     case 'db': {
       const d = DB_SIZES[String(spec.size)];
       if (!d) return 0;
-      const n = spec.topology === 'ha' ? 3 : 1;
+      const n = dbInstances(spec).total;
       return n * (compute(d.vcpu, d.ramGb) * RATE.managedDbFactor + Number(spec.storageGb ?? 0) * RATE.disk['db-optimised']!);
     }
     case 'storage': {
@@ -393,3 +408,11 @@ const inrFormat = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 
 const inrFormat2 = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 /** ₹ with Indian digit grouping (₹1,20,000). */
 export const inr = (n: number, paise = false) => (paise ? inrFormat2 : inrFormat).format(n);
+
+/** "HA (primary + 2 standbys) + 2 read replicas · 5 instances". */
+export function dbTopologyText(spec: Spec): string {
+  const i = dbInstances(spec);
+  const base = i.standbys ? 'HA (primary + 2 standbys)' : 'Standalone';
+  const rr = i.readReplicas ? ` + ${i.readReplicas} read replica${i.readReplicas > 1 ? 's' : ''}` : '';
+  return `${base}${rr} · ${i.total} instance${i.total > 1 ? 's' : ''}`;
+}

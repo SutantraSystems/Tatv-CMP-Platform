@@ -52,8 +52,8 @@ import {
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import { useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { DB_SIZES, FLAVOURS, LIST_PATH, OBJECT_RATE_PER_GB, describe, inr, itemOf, kindOf, regionName } from '@/shared/catalog/catalog';
-import { ProblemError, type LifecycleAction, type Problem, type Resource } from '@/shared/api/types';
+import { DB_SIZES, FLAVOURS, LIST_PATH, OBJECT_RATE_PER_GB, dbTopologyText, describe, inr, itemOf, kindOf, regionName } from '@/shared/catalog/catalog';
+import { PENDING_NAME, ProblemError, type LifecycleAction, type Problem, type Resource } from '@/shared/api/types';
 import { ACTION_LABELS, LifecycleConfirm, canDo, fmtDate, useLifecycle } from '../../components/ResourceList';
 import { PendingLabel, StatusDot, StatusLabel } from '@/shared/ui/Status';
 import { AreaChart, BarChart, CopyValue, avg, lastHourLabels, monthToDate, resourceMonthly, series } from '@/shared/ui/ui';
@@ -61,6 +61,7 @@ import { LineChart, LogViewer, RangePicker } from '@/shared/observability/compon
 import type { RangeId } from '@/shared/observability/data';
 import { resourceCharts, sourcesForKind, templatesFor, tenantLogs } from '@/shared/observability/tenant';
 import { useLive, useSession } from '../../session';
+import { DbReplicas } from './DbReplicas';
 import { imageName } from './VirtualMachines';
 
 const LIST_NAME: Record<string, string> = { vm: 'Virtual machines', k8s: 'Kubernetes clusters', db: 'Databases', storage: 'Storage' };
@@ -119,7 +120,7 @@ function configFacts(r: Resource): [string, ReactNode][] {
       return [
         ['Engine', `PostgreSQL ${String(s.version)}`],
         ['Size', `${String(s.size)} · ${d?.vcpu} vCPU · ${d?.ramGb} GB`],
-        ['Availability', s.topology === 'ha' ? 'Primary and two replicas' : 'Single instance'],
+        ['Availability', dbTopologyText(s)],
         ['Storage', `${s.storageGb} GB per instance`],
       ];
     }
@@ -275,7 +276,7 @@ export function ResourceDetail() {
           <Alert variant="custom" isInline className="stack-gap" title={`Decommissioned. Restorable until ${fmtDate(r.retentionUntil)}, then permanently deleted.`} />
         )}
         {r.pending && (
-          <Alert variant="warning" isInline className="stack-gap" title={`${r.pending.action === 'purge' ? 'Permanent deletion' : 'Decommission'} requested by ${r.pending.requestedBy}`}>
+          <Alert variant="warning" isInline className="stack-gap" title={`${PENDING_NAME[r.pending.action] ?? 'Change'} requested by ${r.pending.requestedBy}`}>
             Waiting for an organisation admin other than the requester to approve under <Link to="/activity">Activity and approvals</Link>.
           </Alert>
         )}
@@ -286,6 +287,7 @@ export function ResourceDetail() {
         <Tabs activeKey={tab} onSelect={(_e, k) => setTab(k)} aria-label="Resource sections" className="detail-tabs" inset={{ default: 'insetMd' }}>
           <Tab eventKey="overview" title={<TabTitleText>Overview</TabTitleText>} />
           <Tab eventKey="metrics" title={<TabTitleText>Metrics</TabTitleText>} />
+          {kind === 'db' && <Tab eventKey="replicas" title={<TabTitleText>Replicas and endpoints</TabTitleText>} />}
           {kind === 'vm' && <Tab eventKey="storage" title={<TabTitleText>Storage and disks</TabTitleText>} />}
           <Tab eventKey="logs" title={<TabTitleText>Logs</TabTitleText>} />
           <Tab eventKey="network" title={<TabTitleText>Networking</TabTitleText>} />
@@ -326,10 +328,16 @@ export function ResourceDetail() {
                             ['Private IPv4', r.addresses ? <CopyValue value={r.addresses.private} label="private IP" /> : '—'],
                             ['VPC network', 'default-vpc'],
                           ]
-                        : [
-                            ['Endpoint', r.endpoint ? <CopyValue value={r.endpoint} label="endpoint" /> : 'Not attached'],
-                            ['VPC network', 'default-vpc'],
-                          ]
+                        : kind === 'db'
+                          ? [
+                              ['Read-write', r.endpoint ? <CopyValue value={r.endpoint} label="read-write endpoint" /> : '—'],
+                              ['Read-only', r.readEndpoint ? <CopyValue value={r.readEndpoint} label="read-only endpoint" /> : 'None'],
+                              ['VPC network', 'default-vpc'],
+                            ]
+                          : [
+                              ['Endpoint', r.endpoint ? <CopyValue value={r.endpoint} label="endpoint" /> : 'Not attached'],
+                              ['VPC network', 'default-vpc'],
+                            ]
                     }
                   />
                 </CardBody>
@@ -486,6 +494,8 @@ export function ResourceDetail() {
           </>
         )}
 
+        {tab === 'replicas' && kind === 'db' && <DbReplicas r={r} />}
+
         {tab === 'storage' && kind === 'vm' && (
           <Card>
             <Table aria-label="Disks" variant="compact">
@@ -532,7 +542,12 @@ export function ResourceDetail() {
                         ['Private IPv4', r.addresses?.private ?? '—'],
                         ['Public IPv4', r.addresses?.public ?? 'None'],
                       ] as [string, ReactNode][])
-                    : ([['Endpoint', r.endpoint ?? '—']] as [string, ReactNode][])),
+                    : kind === 'db'
+                      ? ([
+                          ['Read-write endpoint', r.endpoint ?? '—'],
+                          ['Read-only endpoint', r.readEndpoint ?? 'None'],
+                        ] as [string, ReactNode][])
+                      : ([['Endpoint', r.endpoint ?? '—']] as [string, ReactNode][])),
                 ]}
               />
             </CardBody>

@@ -118,6 +118,59 @@ describe('managed Kubernetes and PostgreSQL', () => {
     await expect(api.runAction(ravi, single.id, 'failover', 'fo-1')).rejects.toMatchObject({ problem: { title: 'No replica to fail over to' } });
   });
 
+  it('counts read replicas as instances and gives a read-only endpoint only when there are copies', async () => {
+    const api = createMockApi({ delayMs: 20, latencyMs: 0 });
+    const { ravi } = await users(api);
+    const base = { version: '17', size: 'db.small', storageGb: 100, encrypted: false, backupDays: 7 };
+    await api.createResource(ravi, 'prj-1', 'pg', { ...base, name: 'reads', topology: 'ha', readReplicas: 2 }, 'rr-1');
+    expect((await api.getQuota('prj-1')).volumeGb.reserved).toBe(500);
+    await api.createResource(ravi, 'prj-1', 'pg', { ...base, name: 'solo', topology: 'single', readReplicas: 0 }, 'rr-2');
+    await wait(60);
+    const list = await api.listResources('prj-1');
+    expect(list.find((r) => r.name === 'reads')?.readEndpoint).toBe('reads-ro.db.internal:5432');
+    expect(list.find((r) => r.name === 'solo')?.readEndpoint).toBeUndefined();
+  });
+
+  it('adds and removes read replicas, moving quota, and needs approval above five', async () => {
+    const api = createMockApi({ delayMs: 20, latencyMs: 0 });
+    const { ravi, meera } = await users(api);
+    const base = { version: '17', size: 'db.small', storageGb: 100, encrypted: false, backupDays: 7 };
+    const { resource } = await api.createResource(ravi, 'prj-1', 'pg', { ...base, name: 'solo', topology: 'single', readReplicas: 0 }, 'c-1');
+    await wait(60);
+    expect((await api.getQuota('prj-1')).volumeGb.used).toBe(100);
+
+    await api.setReadReplicas(ravi, resource.id, 2, 's-1');
+    expect((await api.getQuota('prj-1')).volumeGb).toMatchObject({ used: 100, reserved: 200 });
+    await wait(40);
+    let r = (await api.listResources('prj-1'))[0]!;
+    expect(r.spec.readReplicas).toBe(2);
+    expect(r.readEndpoint).toBeDefined();
+    expect((await api.getQuota('prj-1')).volumeGb).toMatchObject({ used: 300, reserved: 0 });
+
+    await expect(api.setReadReplicas(ravi, resource.id, 9, 's-2')).rejects.toMatchObject({ problem: { title: 'Invalid number of read replicas' } });
+
+    const op = await api.setReadReplicas(ravi, resource.id, 6, 's-3');
+    expect(op.status).toBe('awaiting_approval');
+    expect((await api.getQuota('prj-1')).volumeGb.reserved).toBe(400);
+    await expect(api.setReadReplicas(ravi, resource.id, 1, 's-4')).rejects.toMatchObject({ problem: { title: 'Request already pending' } });
+    await api.decide(meera, op.id, false);
+    expect((await api.getQuota('prj-1')).volumeGb).toMatchObject({ used: 300, reserved: 0 });
+
+    await api.setReadReplicas(ravi, resource.id, 0, 's-5');
+    await wait(40);
+    r = (await api.listResources('prj-1'))[0]!;
+    expect(r.spec.readReplicas).toBe(0);
+    expect(r.readEndpoint).toBeUndefined();
+    expect((await api.getQuota('prj-1')).volumeGb.used).toBe(100);
+  });
+
+  it('needs approval to create a database with more than five read replicas', async () => {
+    const api = createMockApi({ delayMs: 20, latencyMs: 0 });
+    const { ravi } = await users(api);
+    const { operation } = await api.createResource(ravi, 'prj-1', 'pg', { version: '17', size: 'db.small', storageGb: 50, encrypted: false, backupDays: 7, name: 'wide', topology: 'ha', readReplicas: 6 }, 'w-1');
+    expect(operation.status).toBe('awaiting_approval');
+  });
+
   it('rejects actions a service does not offer', async () => {
     const api = createMockApi({ delayMs: 20, latencyMs: 0 });
     const { ravi } = await users(api);

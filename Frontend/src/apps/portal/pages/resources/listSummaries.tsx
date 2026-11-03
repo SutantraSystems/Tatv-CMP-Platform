@@ -1,5 +1,5 @@
 import { CubesIcon, DatabaseIcon, HddIcon, MemoryIcon, MicrochipIcon, RupeeSignIcon, ServerIcon } from '@patternfly/react-icons';
-import { DB_SIZES, FLAVOURS, inr } from '@/shared/catalog/catalog';
+import { DB_SIZES, FLAVOURS, dbInstances, inr } from '@/shared/catalog/catalog';
 import type { Resource } from '@/shared/api/types';
 import { StatCard, resourceMonthly } from '@/shared/ui/ui';
 
@@ -45,10 +45,11 @@ export function K8sSummary({ rows }: { rows: Resource[] }) {
 
 export function DbSummary({ rows }: { rows: Resource[] }) {
   const live = rows.filter((r) => r.status !== 'awaiting_approval');
-  const n = (r: Resource) => (r.spec.topology === 'ha' ? 3 : 1);
+  const n = (r: Resource) => dbInstances(r.spec).total;
+  const rr = live.reduce((s, r) => s + dbInstances(r.spec).readReplicas, 0);
   return (
     <div className="stat-grid stat-grid--4">
-      <StatCard label="Databases" value={live.length} sub={`${live.filter((r) => r.spec.topology === 'ha').length} highly available`} icon={<DatabaseIcon />} tone="teal" />
+      <StatCard label="Databases" value={live.length} sub={`${live.filter((r) => r.spec.topology === 'ha').length} highly available · ${rr} read replica${rr === 1 ? '' : 's'}`} icon={<DatabaseIcon />} tone="teal" />
       <StatCard label="Instances" value={live.reduce((s, r) => s + n(r), 0)} sub={`${live.reduce((s, r) => s + n(r) * (DB_SIZES[String(r.spec.size)]?.vcpu ?? 0), 0)} vCPUs in total`} icon={<ServerIcon />} />
       <StatCard label="Storage" value={`${live.reduce((s, r) => s + n(r) * Number(r.spec.storageGb ?? 0), 0).toLocaleString('en-IN')} GB`} sub="Including replicas" icon={<HddIcon />} tone="violet" />
       {costCard(live)}
