@@ -10,9 +10,10 @@
  *  - the same Idempotency-Key never creates a second resource;
  *  - errors are RFC 9457 problem details.
  */
-import { CATALOG, REGIONS, computeOnly, demandFor, itemOf, kindOf, needsApproval, storageOnly, type Demand, type Spec } from '@/shared/catalog/catalog';
+import { CATALOG, MAX_READ_REPLICAS, READ_REPLICA_APPROVAL_ABOVE, REGIONS, computeOnly, dbInstances, dbTopologyText, demandFor, itemOf, kindOf, needsApproval, storageOnly, type Demand, type Spec } from '@/shared/catalog/catalog';
 import {
   APPROVAL_ACTIONS,
+  PENDING_NAME,
   ProblemError,
   RETENTION_DAYS,
   type Accepted,
@@ -128,7 +129,8 @@ export function createMockApi(opts: MockOptions = {}): CmpApi {
         return `Cluster ${res.spec.version} ready with ${res.spec.workerCount} workers; kubeconfig available through single sign-on.`;
       case 'db':
         res.endpoint = `${res.name}.db.internal:5432`;
-        return res.spec.topology === 'ha' ? 'Primary and two replicas running; backups scheduled.' : 'Instance running; backups scheduled.';
+        setReadEndpoint(res);
+        return `${dbTopologyText(res.spec)} running; backups scheduled.`;
       case 'storage':
         if (res.catalogItemId === 'object') {
           res.endpoint = `https://${res.name}.objects.${host}`;
@@ -142,6 +144,18 @@ export function createMockApi(opts: MockOptions = {}): CmpApi {
       default:
         return 'Created.';
     }
+  }
+
+  /** The read-only endpoint exists while there is any copy to read from. */
+  function setReadEndpoint(res: Resource) {
+    if (dbInstances(res.spec).total > 1) res.readEndpoint = `${res.name}-ro.db.internal:5432`;
+    else delete res.readEndpoint;
+  }
+
+  /** Quota for N more (or fewer) database instances of this size. */
+  function perInstance(res: Resource, n: number): Demand {
+    const one = demandFor(res.catalogItemId, { ...res.spec, topology: 'single', readReplicas: 0 });
+    return { vcpu: one.vcpu * n, ramGb: one.ramGb * n, volumeGb: one.volumeGb * n, gpus: 0, publicIps: 0 };
   }
 
   function provision(res: Resource, op: Operation) {
@@ -161,7 +175,7 @@ export function createMockApi(opts: MockOptions = {}): CmpApi {
 
   const ALLOWED_FROM: Record<Action, Resource['status'][]> = {
     stop: ['active'], start: ['stopped'], reboot: ['active'], snapshot: ['active', 'stopped'], backup: ['active', 'stopped'],
-    upgrade: ['active'], failover: ['active'], decommission: ['active', 'stopped', 'error'], restore: ['decommissioned'], purge: ['decommissioned'],
+    upgrade: ['active'], failover: ['active'], 'scale-replicas': ['active'], decommission: ['active', 'stopped', 'error'], restore: ['decommissioned'], purge: ['decommissioned'],
   };
 
   function checkState(res: Resource, action: Action) {
@@ -177,7 +191,7 @@ export function createMockApi(opts: MockOptions = {}): CmpApi {
     if (action === 'restore') adjust(res.projectId, computeOnly(d), 'reserved', 1);
     op.status = 'running';
     const transient: Partial<Record<Action, Resource['status']>> = {
-      stop: 'stopping', start: 'starting', upgrade: 'upgrading', failover: 'failing_over', decommission: 'decommissioning', restore: 'restoring', purge: 'purging',
+      stop: 'stopping', start: 'starting', upgrade: 'upgrading', failover: 'failing_over', 'scale-replicas': 'scaling', decommission: 'decommissioning', restore: 'restoring', purge: 'purging',
     };
     const before = res.status;
     if (transient[action]) res.status = transient[action]!;
@@ -200,8 +214,23 @@ export function createMockApi(opts: MockOptions = {}): CmpApi {
           break;
         case 'failover':
           res.status = 'active';
-          message = 'A replica was promoted to primary; the endpoint is unchanged.';
+          message = 'A standby was promoted to primary; the endpoint is unchanged.';
           break;
+        case 'scale-replicas': {
+          const { from, to } = op.replicas!;
+          if (to > from) {
+            adjust(res.projectId, perInstance(res, to - from), 'reserved', -1);
+            adjust(res.projectId, perInstance(res, to - from), 'used', 1);
+          } else adjust(res.projectId, perInstance(res, from - to), 'used', -1);
+          res.spec.readReplicas = to;
+          setReadEndpoint(res);
+          res.status = 'active';
+          message =
+            to > from
+              ? `${to - from} read replica${to - from > 1 ? 's' : ''} added and in sync; the read-only endpoint now spreads reads across ${dbInstances(res.spec).total - 1} copies.`
+              : `${from - to} read replica${from - to > 1 ? 's' : ''} removed after draining connections; quota released.`;
+          break;
+        }
         case 'decommission':
           adjust(res.projectId, computeOnly(d), 'used', -1);
           res.status = 'decommissioned';
@@ -257,7 +286,7 @@ export function createMockApi(opts: MockOptions = {}): CmpApi {
     add('prj-1', 'vm-windows', vm('reporting-win', 's.small', { image: 'windows-2022', volumeGb: 100 }), { region: 'in-west', days: 6, by: 'u-meera', tags: { environment: 'production', tier: 'reporting' } });
     add('prj-1', 'vm-linux', vm('dr-standby-01', 's.small'), { region: 'in-south', days: 20, by: 'u-meera', tags: { environment: 'dr', tier: 'frontend' } });
     add('prj-1', 'k8s', { name: 'apps-cluster', version: '1.32', controlPlane: 'hosted', workerFlavour: 'm.medium', workerCount: 3, publicApi: false }, { region: 'in-west', days: 18, by: 'u-meera', tags: prod });
-    add('prj-1', 'pg', { name: 'orders-db', version: '17', size: 'db.small', topology: 'ha', storageGb: 100, encrypted: true, backupDays: 14 }, { region: 'in-west', days: 18, by: 'u-meera', tags: prod });
+    add('prj-1', 'pg', { name: 'orders-db', version: '17', size: 'db.small', topology: 'ha', readReplicas: 2, storageGb: 100, encrypted: true, backupDays: 14 }, { region: 'in-west', days: 18, by: 'u-meera', tags: prod });
     add('prj-1', 'block', { name: 'data-vol-01', sizeGb: 500, volumeType: 'premium', backupPolicy: 'daily-7' }, { region: 'in-west', days: 10, by: 'u-ravi', tags: prod });
     add('prj-1', 'file', { name: 'shared-files', protocol: 'nfs', sizeGb: 1000, snapshots: true }, { region: 'in-west', days: 10, by: 'u-ravi', tags: prod });
     add('prj-1', 'object', { name: 'app-assets', versioning: true, objectLock: false, retentionDays: 30 }, { region: 'in-west', days: 16, by: 'u-meera', tags: prod });
@@ -367,7 +396,7 @@ export function createMockApi(opts: MockOptions = {}): CmpApi {
       if (action === 'upgrade' && res.spec.version === '1.33')
         throw problem(409, 'Already on the latest version', 'This cluster already runs Kubernetes 1.33.', 'invalid-state');
       if (res.pending)
-        throw problem(409, 'Request already pending', `A ${res.pending.action === 'purge' ? 'permanent deletion' : res.pending.action} request for ${res.name} is waiting for approval.`, 'invalid-state');
+        throw problem(409, 'Request already pending', `A ${(PENDING_NAME[res.pending.action] ?? res.pending.action).toLowerCase()} request for ${res.name} is waiting for approval.`, 'invalid-state');
       checkState(res, action);
       if (action === 'restore') {
         const over = overQuota(res.projectId, computeOnly(demandOf(res)));
@@ -399,6 +428,42 @@ export function createMockApi(opts: MockOptions = {}): CmpApi {
       return later(res);
     },
 
+    async setReadReplicas(user, resourceId, count, key) {
+      const seen = idempotency.get(key);
+      if (seen && !('resource' in seen)) return later(seen);
+      const res = resources.find((r) => r.id === resourceId);
+      if (!res || res.status === 'deleted') throw problem(404, 'Not found', 'Resource not found.', 'not-found');
+      if (kindOf(res.catalogItemId) !== 'db') throw problem(400, 'Action not offered', 'Read replicas apply to managed databases only.', 'unsupported-action');
+      if (!can(user, res.projectId, WRITE_ROLES)) throw problem(403, 'Not permitted', 'Your role in this project cannot change resources.', 'forbidden');
+      if (!Number.isInteger(count) || count < 0 || count > MAX_READ_REPLICAS)
+        throw problem(400, 'Invalid number of read replicas', `Choose between 0 and ${MAX_READ_REPLICAS} read replicas.`, 'validation');
+      const from = dbInstances(res.spec).readReplicas;
+      if (count === from) throw problem(409, 'Nothing to change', `${res.name} already has ${from} read replica${from === 1 ? '' : 's'}.`, 'invalid-state');
+      if (res.pending)
+        throw problem(409, 'Request already pending', `A ${(PENDING_NAME[res.pending.action] ?? res.pending.action).toLowerCase()} request for ${res.name} is waiting for approval.`, 'invalid-state');
+      checkState(res, 'scale-replicas');
+      if (count > from) {
+        const over = overQuota(res.projectId, perInstance(res, count - from));
+        if (over.length) throw problem(422, 'Quota exceeded', `Adding ${count - from} read replica${count - from > 1 ? 's' : ''} would exceed the project quota for: ${over.join(', ')}.`, 'quota-exceeded');
+        adjust(res.projectId, perInstance(res, count - from), 'reserved', 1);
+      }
+      const op: Operation = {
+        id: `op-${hex()}`, projectId: res.projectId, resourceId: res.id, resourceName: res.name, action: 'scale-replicas', status: 'running',
+        requestedBy: user.id, requestedAt: now(), replicas: { from, to: count },
+      };
+      operations.push(op);
+      idempotency.set(key, op);
+      if (count > READ_REPLICA_APPROVAL_ABOVE && count > from) {
+        op.status = 'awaiting_approval';
+        op.message = `${from} → ${count} read replicas. More than ${READ_REPLICA_APPROVAL_ABOVE} needs an organisation admin other than ${user.name} to approve; quota is reserved meanwhile.`;
+        res.pending = { action: 'scale-replicas', operationId: op.id, requestedBy: user.name };
+        emit();
+        return later(op);
+      }
+      execute(res, op, 'scale-replicas');
+      return later(op);
+    },
+
     async decide(user, operationId, approve) {
       const op = operations.find((o) => o.id === operationId);
       if (!op || op.status !== 'awaiting_approval') throw problem(409, 'Nothing to decide', 'This request is not awaiting approval.', 'invalid-state');
@@ -415,7 +480,11 @@ export function createMockApi(opts: MockOptions = {}): CmpApi {
         }
       } else {
         delete res.pending;
-        if (!approve) finish(op, 'rejected', `Rejected by ${user.name}; ${res.name} is unchanged.`);
+        if (!approve) {
+          if (op.action === 'scale-replicas' && op.replicas && op.replicas.to > op.replicas.from)
+            adjust(res.projectId, perInstance(res, op.replicas.to - op.replicas.from), 'reserved', -1);
+          finish(op, 'rejected', `Rejected by ${user.name}; ${res.name} is unchanged.`);
+        }
         else {
           try {
             checkState(res, op.action);

@@ -218,3 +218,5 @@
 .qbar__reserved { background: repeating-linear-gradient(45deg, #8fa6e0, #8fa6e0 4px, #b9c8ee 4px, #b9c8ee 8px); }
 .qbar.is-warn .qbar__used { background: var(--warn); }
 .qbar.is-bad .qbar__used { background: var(--bad); }
+.card-title-row { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+.rr-row { display: flex; align-items: center; gap: 1rem; }

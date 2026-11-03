@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { fileURLToPath, URL } from 'node:url';
 import { viteSingleFile } from 'vite-plugin-singlefile';
 
 /**
@@ -12,6 +13,7 @@ export default defineConfig(({ mode }) => {
   const single = mode === 'preview' || mode === 'preview-operator';
   return {
     plugins: single ? [react(), viteSingleFile()] : [react()],
+    resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
     build: {
       outDir: mode === 'preview' ? 'dist-preview' : mode === 'preview-operator' ? 'dist-preview-operator' : 'dist',
       rollupOptions: {

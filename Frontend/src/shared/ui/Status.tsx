@@ -1,5 +1,5 @@
 import { Label } from '@patternfly/react-core';
-import type { OperationStatus, Resource, ResourceStatus } from '../api/types';
+import { PENDING_NAME, type OperationStatus, type Resource, type ResourceStatus } from '../api/types';
 
 type Colour = 'green' | 'blue' | 'orange' | 'red' | 'grey' | 'purple';
 
@@ -13,6 +13,7 @@ const COLOURS: Record<string, Colour> = {
   deleting: 'blue',
   upgrading: 'blue',
   failing_over: 'blue',
+  scaling: 'blue',
   decommissioning: 'blue',
   restoring: 'blue',
   purging: 'blue',
@@ -25,7 +26,7 @@ const COLOURS: Record<string, Colour> = {
   error: 'red',
 };
 
-const TEXT: Partial<Record<string, string>> = { active: 'Running', awaiting_approval: 'Awaiting approval', failing_over: 'Failing over' };
+const TEXT: Partial<Record<string, string>> = { active: 'Running', awaiting_approval: 'Awaiting approval', failing_over: 'Failing over', scaling: 'Changing replicas' };
 
 export const statusText = (status: string) => {
   const t = TEXT[status] ?? status.replace(/_/g, ' ');
@@ -53,7 +54,7 @@ export function PendingLabel({ r }: { r: Resource }) {
   if (!r.pending) return null;
   return (
     <Label color="orange" isCompact>
-      {r.pending.action === 'purge' ? 'Permanent deletion' : 'Decommission'} awaiting approval
+      {PENDING_NAME[r.pending.action] ?? 'Request'} awaiting approval
     </Label>
   );
 }

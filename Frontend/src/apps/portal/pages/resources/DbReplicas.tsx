@@ -21,11 +21,11 @@ import {
 import { PlusCircleIcon } from '@patternfly/react-icons';
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import { useState } from 'react';
-import { MAX_READ_REPLICAS, READ_REPLICA_APPROVAL_ABOVE, dbInstances, dbTopologyText, inr, monthlyPrice } from '../api/catalog';
-import { ProblemError, type Problem, type Resource } from '../api/types';
-import { CopyValue } from '../components/ui';
-import { hash, rng } from '../observability/data';
-import { newIdempotencyKey, useSession } from '../session';
+import { MAX_READ_REPLICAS, READ_REPLICA_APPROVAL_ABOVE, dbInstances, dbTopologyText, inr, monthlyPrice } from '@/shared/catalog/catalog';
+import { ProblemError, type Problem, type Resource } from '@/shared/api/types';
+import { CopyValue } from '@/shared/ui/ui';
+import { hash, rng } from '@/shared/observability/data';
+import { newIdempotencyKey, useSession } from '../../session';
 
 const ZONES = ['zone-a', 'zone-b', 'zone-c'];
 

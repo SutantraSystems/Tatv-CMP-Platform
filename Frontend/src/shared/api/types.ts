@@ -60,7 +60,7 @@ export interface FieldSchema {
   /** Form section this field is shown in. */
   'x-section'?: string;
   /** Render an enum as selectable cards instead of a drop-down. */
-  'x-widget'?: 'cards';
+  'x-widget'?: 'cards' | 'stepper';
   /** Second line for each card (same order as `enum`). */
   'x-enumHints'?: string[];
   /** Optional badge for each card, e.g. "Needs approval". */
@@ -112,10 +112,16 @@ export type Day2Action = 'reboot' | 'snapshot' | 'backup' | 'upgrade' | 'failove
  */
 export type LifecycleAction = 'stop' | 'start' | 'decommission' | 'restore' | 'purge';
 
-export type Action = Day2Action | LifecycleAction;
+/** Changing the number of read replicas on a database (its own endpoint, since it carries a count). */
+export type ScaleAction = 'scale-replicas';
+
+export type Action = Day2Action | LifecycleAction | ScaleAction;
 
 /** Lifecycle actions that always need approval from an organisation admin other than the requester. */
 export const APPROVAL_ACTIONS: Action[] = ['decommission', 'purge'];
+
+/** How a pending request is named in messages. */
+export const PENDING_NAME: Partial<Record<Action, string>> = { decommission: 'Decommission', purge: 'Permanent deletion', 'scale-replicas': 'Read replica change' };
 
 /** Days a decommissioned workload stays restorable before automatic permanent deletion. */
 export const RETENTION_DAYS = 7;
@@ -129,6 +135,7 @@ export type ResourceStatus =
   | 'starting'
   | 'upgrading'
   | 'failing_over'
+  | 'scaling'
   | 'deleting'
   | 'decommissioning'
   | 'decommissioned'
@@ -151,8 +158,10 @@ export interface Resource {
   createdAt: string;
   createdBy: string;
   addresses?: { private: string; public?: string };
-  /** Connection endpoint for clusters and databases. */
+  /** Connection endpoint for clusters and databases (read-write for databases). */
   endpoint?: string;
+  /** Databases: read-only endpoint spread across standbys and read replicas. */
+  readEndpoint?: string;
   /** Set while decommissioned: the end of the retention hold. */
   retentionUntil?: string;
   /** A lifecycle request (decommission or permanent delete) waiting for approval. */
@@ -194,6 +203,8 @@ export interface Operation {
   finishedAt?: string;
   approvedBy?: string;
   message?: string;
+  /** For scale-replicas: the change requested. */
+  replicas?: { from: number; to: number };
 }
 
 export interface QuotaLine {
@@ -254,6 +265,8 @@ export interface CmpApi {
   ): Promise<Accepted>;
   runAction(user: User, resourceId: string, action: Action, idempotencyKey: string): Promise<Operation>;
   updateTags(user: User, resourceId: string, tags: Record<string, string>): Promise<Resource>;
+  /** Databases: change the number of read replicas (more than the approval limit waits for an admin). */
+  setReadReplicas(user: User, resourceId: string, count: number, idempotencyKey: string): Promise<Operation>;
   decide(user: User, operationId: string, approve: boolean): Promise<Operation>;
   subscribe(listener: () => void): () => void;
 }

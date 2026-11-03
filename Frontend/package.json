@@ -2,7 +2,7 @@
   "name": "cmp-portal",
   "private": true,
   "version": "0.1.0",
-  "description": "Sutantra CMP \u2014 Tatv Cloud tenant portal and operator console prototypes (React, TypeScript, PatternFly) against mock CMP APIs",
+  "description": "Sutantra CMP — Tatv Cloud tenant portal and operator console prototypes (React, TypeScript, PatternFly) against mock CMP APIs",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -26,6 +26,7 @@
   "devDependencies": {
     "@testing-library/jest-dom": "6.6.3",
     "@testing-library/react": "16.3.0",
+    "@types/node": "^26.6.6",
     "@types/react": "18.3.23",
     "@types/react-dom": "18.3.7",
     "@vitejs/plugin-react": "4.4.1",
