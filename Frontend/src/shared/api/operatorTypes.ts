@@ -1,7 +1,3 @@
-/**
- * Operator API contract (/operator/v1). Published only on the internal gateway; never on the public one.
- * Operators see tenant metadata and usage, never the data inside tenants' workloads.
- */
 import type { RegionId } from './types';
 
 /** Draft operator roles; final split follows the agreed RACI matrix. */

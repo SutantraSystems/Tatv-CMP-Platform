@@ -88,13 +88,9 @@ interface Props {
   emptyText: string;
   createItemId: string;
   createLabel: string;
-  /** What shutting this kind of workload down means, shown in the confirmation. */
   shutdownNote: string;
-  /** Summary cards above the list, computed from the rows in view. */
   summary?: (rows: Resource[]) => ReactNode;
-  /** Label for the search field. */
   searchHint?: string;
-  /** Several create options (e.g. block, file, object); replaces the single create button. */
   createOptions?: { itemId: string; label: string }[];
 }
 

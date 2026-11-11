@@ -1,4 +1,3 @@
-/** Two-letter initials for avatars, e.g. "Asha Rao" → "AR". */
 export const initials = (name = '') =>
   name
     .split(/\s+/)

@@ -9,10 +9,8 @@ interface Session {
   projects: Project[];
   organisation?: Organisation;
   project?: Project;
-  /** Region the console is scoped to; lists and new resources use it. */
   region: RegionId;
   setRegion: (r: RegionId) => void;
-  /** True when the signed-in user is an organisation admin or owner in the current tenant. */
   isAdmin: boolean;
   signIn: (userId: string) => Promise<void>;
   signOut: () => void;
@@ -79,7 +77,6 @@ export function useSession(): Session {
   return s;
 }
 
-/** Re-runs `load` whenever the mock API reports a change (a server-sent event stream in production). */
 export function useLive<T>(load: () => Promise<T>, deps: unknown[]): T | undefined {
   const { api: client } = useSession();
   const [data, setData] = useState<T>();
@@ -92,7 +89,6 @@ export function useLive<T>(load: () => Promise<T>, deps: unknown[]): T | undefin
       live = false;
       off();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
   return data;
 }
