@@ -1,7 +1,6 @@
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 
-/** English and Hindi to start; regional languages are added as further resource bundles. */
 const resources = {
   en: {
     translation: {

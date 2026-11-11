@@ -1,9 +1,3 @@
-/**
- * Types mirroring the CMP API contract (OpenAPI 3.1, /v1).
- * In the real platform these are generated from the published spec; here they are hand-written
- * so the prototype can run against the in-browser mock.
- */
-
 export type Role =
   | 'org-owner'
   | 'org-admin'
@@ -57,13 +51,9 @@ export interface FieldSchema {
   minimum?: number;
   maximum?: number;
   default?: string | number | boolean;
-  /** Form section this field is shown in. */
   'x-section'?: string;
-  /** Render an enum as selectable cards instead of a drop-down. */
   'x-widget'?: 'cards' | 'stepper';
-  /** Second line for each card (same order as `enum`). */
   'x-enumHints'?: string[];
-  /** Optional badge for each card, e.g. "Needs approval". */
   'x-enumBadges'?: (string | null)[];
 }
 
@@ -83,33 +73,21 @@ export interface CatalogItem {
   id: string;
   name: string;
   category: ServiceCategory;
-  /** Sub-group inside the category, e.g. SQL or NoSQL. */
   group: string;
   description: string;
-  /** Publisher; anything other than the platform itself is a marketplace listing. */
   publisher: string;
-  /** Set for items wired into this prototype; decides the list page and the mock's rules. */
   kind?: ResourceKind;
-  /** Wired into this prototype's mock API. */
   available: boolean;
   schema?: ObjectSchema;
-  /** Day-2 operations the catalog allows on resources of this item. */
   day2: Day2Action[];
-  /** Human-readable approval rule shown before ordering. */
   approvalRule?: string;
-  /** Whether the workload can be shut down and started (false for storage). */
   powerControl?: boolean;
-  /** Shortcut item that opens another item's form with values preset (e.g. GPU VM). */
   preset?: { itemId: string; values: Record<string, string | number | boolean> };
 }
 
 /** Actions offered by specific catalog items. */
 export type Day2Action = 'reboot' | 'snapshot' | 'backup' | 'upgrade' | 'failover';
 
-/**
- * Lifecycle actions every workload supports:
- * shut down / start; decommission (retention hold, restorable); restore; purge (permanent, crypto-erasure).
- */
 export type LifecycleAction = 'stop' | 'start' | 'decommission' | 'restore' | 'purge';
 
 /** Changing the number of read replicas on a database (its own endpoint, since it carries a count). */

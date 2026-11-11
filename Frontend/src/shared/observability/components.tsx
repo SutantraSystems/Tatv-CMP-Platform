@@ -16,7 +16,6 @@ import {
   type Template,
 } from './data';
 import './obs.css';
-
 export const SERIES_COLOURS = ['#1f4fc4', '#0f8f7e', '#c46a12', '#8a44c2'];
 export const SEV_COLOUR: Record<Severity, string> = {
   critical: '#8f0d0d',
